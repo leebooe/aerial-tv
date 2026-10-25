@@ -4,6 +4,8 @@
 
 ## 现状（2026-10-24）
 
+- **本地 fork 1.46.1（versionCode 50，发布待定）**：修复 TCL MT5879 / 75Q9K 长按、双击 HOME 打不开近期任务的问题。新增 `system/RecentApps.kt`，检测 CyberUI 任务管理 Activity 和公开广播接收器，沿用固件的 `OPEN_GLOBAL_HISTORY` 广播路径；其他电视走 `GLOBAL_ACTION_RECENTS`。standard / guard release 构建与 release 必要 lint 检查通过；26 项单元测试通过（新增 6 项）。户主授权卸载上游版并安装自签名 fork，75Q9K 已安装 1.46.1-guard，speed 编译成功；户主用实体遥控器确认长按打开近期任务、松开后保持、返回后短按 HOME 回到 Aerial，日志也记录了长按和双击的固件调用。守护已绑定、保留小T助手、ADB 常开和自启动授权已恢复。每日一图与屏保设置保持原有选择，私有排序随重装重置；原 APK 与可读取配置已备份。此次切换的重启验收待后续安排。本机信息、签名和验收记录保存在忽略的 `local/` 中。
+
 - **1.46（versionCode 49），2026-10-24 发布**（[v1.46](https://github.com/pengchujin/aerial-tv/releases/tag/v1.46)）：手机配置页重做，底部四个标签：壁纸（当前壁纸大图、各组壁纸、添加照片，删照片走底部弹层确认）、屏保（一列单选，选「视频」时下面管理视频）、主屏幕（焦点样式、天气城市、文件夹、App 图标；点图标出底部弹层：换图、信号源起名、恢复默认）、更多（型号、语言、反馈问题）。标签记在地址（`#home`）和手机上，每页各自记住滚动位置；状态没变时 6 秒轮询不重建页面（以前图片会闪），弹层开着时不轮询。新增文件夹改名（`POST api/folder/name`，`id` + `name`，最多 24 字，空名字不改；`api/state` 多了 `folders`；`tile/folder:<id>` 给文件夹磁贴图）：`HomeViewModel` 把重命名挂在 `AppCatalog.renameFolder`。顺手修了「复制」诊断信息时局部变量 `t` 盖住翻译函数、复制后报错。小米 MFTR0（standard release）上用手机页把户主的「系统应用」改成「系统应用 测试」，电视网格里马上变了，已改回；壁纸、屏保页对着真机数据看过。TCL 没装，没在真手机（iOS Safari、微信）里打开过，只在浏览器的手机尺寸下看过深浅色。
 - 同一版：官网和 README 的截图换成 1.46 在小米 MFTR0 上拍的（单排、玻璃底板，户主本来就选的航拍壁纸）：首页优胜美地雪山，聚焦和长按菜单大峡谷，控制中心、网格、文件夹、个性化巴塔哥尼亚，屏保夏威夷云海和冰岛辫状河，手机页是新版（无头 Chrome 390×760 @2x 渲染真机页面）。换片子的办法：停在第一排让壁纸播起来，`PREVIEW_SCREENSAVER` 让屏保接着放壁纸的片子，左右键换片，按返回唤醒后就停在这一帧、底板出现，10 秒内截图。个性化截图里二维码、局域网地址和「我的照片」已模糊。官网图片缓存 7 天，所以 `site/index.html`、`site/en/index.html` 里换过的图加了 `?v=146`。户主的设置没动，壁纸仍是航拍，只是停在了巴塔哥尼亚这一帧。屏保切片时 `screencap` 偶尔截到彩色噪点（解码到一半），电视画面上没看到。
 - **1.45（versionCode 48），2026-10-24 发布**（[v1.45](https://github.com/pengchujin/aerial-tv/releases/tag/v1.45)）：创维 Android 11（75A7D，8R134_A7D）`TvInputManager` 为空时，从 `content://com.skyworth.tv.sdk.provider/system/source_list` 读信号源、用 `com.skyworth.tv/.activity.SkyTVMainActivity` 的 `source` Bundle 切换（#444，报告人的补丁，在 75A7D 上验证过），接在回退链最后；`com.skyworth.tv` 算播放信号源的 App，守护不把它当原桌面。我们的小米和 TCL 回归信号源不变。
@@ -97,7 +99,7 @@
 ## 环境
 
 - macOS，JDK 17（`/opt/homebrew/opt/openjdk@17`），Android SDK 在 `~/Library/Android/sdk`，Gradle Wrapper 8.14.3，AGP 8.12，Kotlin 2.2.10。
-- **签名**：`local/signing.keystore` 加 `local/signing.properties`，`app/build.gradle.kts` 会优先使用它。电视上的版本都是用这把钥匙签的（SHA-256 `e08962dc…6685`）。没有它也能编译，但会回落到本机的 debug key，装不上电视（签名不一致）。
+- **本地 fork 签名**：`local/signing.keystore` 加 `local/signing.properties`，`app/build.gradle.kts` 优先使用它；本机已生成固定的 RSA 4096 签名（SHA-256 `7ec41b2d…6a04`），用于户主 75Q9K 上的 fork。继续更新该电视时沿用这把密钥，使用覆盖安装。密钥和密码文件须通过私密渠道备份，具体位置记录在 `local/TVS.md`。上游官方签名是 `e08962dc…6685`，官方包安装环境使用官方密钥；跨签名切换须先备份，再按户主授权重装。缺少签名文件时构建会使用本机 debug key。
 - **ADB 连电视**需要关闭 Claude Code 的沙箱（局域网访问被拦）。电视第一次连接时要在电视上点「允许 USB 调试」。
 
 ## 日常操作

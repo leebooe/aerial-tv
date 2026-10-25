@@ -75,6 +75,13 @@ TCL 手机 App 有一个「把手机里的 APK 推到电视」的功能。电视
 
 ## 设置入口
 
+### 近期任务（75Q9K，Android 11）
+
+- 这套固件的 `mRecentsComponent=null`，Aerial 守护原来在长按 / 双击 HOME 时调用 `GLOBAL_ACTION_RECENTS`，近期任务界面保持关闭。
+- 系统长按 HOME 由 `TclPhoneWindowManager.launchAllAppsActionForAll()` 发送 `com.tcl.action.OPEN_GLOBAL_HISTORY` 广播。CyberUI 的公开接收器 `com.tcl.global.history.receiver.GlobalHistoryReceiver` 在内部启动 `com.tcl.cyberui/.taskmanager.view.TaskManagerActivity`。该 Activity 是私有组件，直接启动会报权限错误。
+- `RecentApps` 按能力检测：任务管理 Activity 存在且启用，同时有已导出、已启用、调用方有权限访问的广播接收器，才向该接收器发送显式广播。只有历史记录功能的旧版 CyberUI，以及缺少入口的其他固件，继续调用 Android 通用 Recents。长按和双击共用此入口。
+- 2026-10-24：在 75Q9K 上，用独立 release 验证应用复用 `RecentApps.kt`，完成 speed 编译后从普通应用 UID 调用，日志 `handled=true`，前台与截图均确认为 `TaskManagerActivity`；验证应用随后移除。6 项新增单元测试覆盖固件入口、历史记录旧固件、缺少入口、访问限制、禁用组件、发送异常，连同已有测试共 26 项通过。随后户主授权卸载上游版、安装固定自签名的 fork 1.46.1-guard；speed 编译成功，实体遥控器长按打开近期任务、松开后保持、返回后短按 HOME 回到 Aerial，户主确认均正常。日志同时记录了长按和双击的固件请求。原版 APK 和可读取配置已备份，私有排序随重装重置；屏保与无障碍中的其他服务保持原值。
+
 - `android.settings.SETTINGS` 没有任何 Activity 响应。`com.tcl.settings/.ui.MainActivity` 用 `ACTION_MAIN` 打开时，会在左侧弹出 TCL 完整的设置面板（图像、声音、网络……）。
 - `android.settings.WIFI_SETTINGS` 由同一个 Activity 响应，会弹出左侧的「无线网络」面板。两个面板都是悬浮窗口，Aerial 仍然是 resumed Activity。
 - 1.7 之前，控制中心的「设置」和「网络」在 TCL 上都打不开：`firstResolvable` 用的是 `Intent.resolveActivity()`，它碰到带明确 component 的 Intent 时不做检查，直接返回这个 component，结果选中了不存在的小米组件。

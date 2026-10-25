@@ -28,6 +28,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import app.orchard.tv.MainActivity
 import app.orchard.tv.settings.AerialSettings
+import app.orchard.tv.system.RecentApps
 import app.orchard.tv.system.SystemProbe
 
 /**
@@ -494,7 +495,7 @@ class HomeGuardService : AccessibilityService() {
                 homeHeld = true
                 lastHomeUpAt = Long.MIN_VALUE / 2
                 Log.i(TAG, "Home pressed twice; opening recent apps")
-                performGlobalAction(GLOBAL_ACTION_RECENTS)
+                openRecentApps()
                 return true
             }
             handler.postDelayed(homeHold, ViewConfiguration.getLongPressTimeout().toLong())
@@ -619,7 +620,11 @@ class HomeGuardService : AccessibilityService() {
     private val homeHold = Runnable {
         homeHeld = true
         Log.i(TAG, "Home held; opening recent apps")
-        performGlobalAction(GLOBAL_ACTION_RECENTS)
+        openRecentApps()
+    }
+
+    private fun openRecentApps() {
+        RecentApps.open(this) { performGlobalAction(GLOBAL_ACTION_RECENTS) }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
