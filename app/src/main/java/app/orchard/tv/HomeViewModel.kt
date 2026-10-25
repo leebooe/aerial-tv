@@ -13,6 +13,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.orchard.tv.apps.AppCatalog
 import app.orchard.tv.apps.AppEntry
+import app.orchard.tv.apps.AppNames
+import app.orchard.tv.apps.LayoutOps
 import app.orchard.tv.apps.CustomIcons
 import app.orchard.tv.apps.SourceLooks
 import app.orchard.tv.apps.FOLDER_KEY_PREFIX
@@ -97,16 +99,32 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     var screensaverVisible by mutableStateOf(false)
     val screensaverSkips = ScreensaverSkips()
 
+    /** The phone page's arranging: the tile menu's steps, without the focus moves that go with them on the TV. */
+    // Declared before init, which hands it to AppCatalog.
+    private val layoutOps: LayoutOps = object : LayoutOps {
+        override fun move(key: String, target: String) { store.move(key, target); arrange() }
+        override fun moveInFolder(key: String, target: String) { store.moveInFolder(key, target); arrange() }
+        override fun hide(key: String) = this@HomeViewModel.hide(key)
+        override fun unhide(key: String) = this@HomeViewModel.unhide(key)
+        override fun toFolder(key: String, id: String?) { putInFolder(key, id) }
+        override fun outOfFolder(key: String) = takeOutOfFolder(key)
+        override fun ungroup(id: String) = this@HomeViewModel.ungroup(id)
+    }
+
     private var loadJob: Job? = null
 
     init {
         AppCatalog.renameFolder = ::renameFolder
+        AppCatalog.pinSource = ::pinSourceById
+        AppCatalog.layout = layoutOps
         reload()
         // A tile picture set or removed from the phone page.
         viewModelScope.launch { snapshotFlow { CustomIcons.version }.drop(1).collect { reload() } }
         offerSetupOnce()
         // An input's device or name, chosen from its tile's menu or the phone page.
         viewModelScope.launch { snapshotFlow { SourceLooks.all }.drop(1).collect { if (loaded) arrange() } }
+        // An app renamed on the phone page.
+        viewModelScope.launch { snapshotFlow { AppNames.all }.drop(1).collect { if (loaded) arrange() } }
     }
 
     /**
@@ -188,13 +206,19 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         // Pinned TV inputs share the grid, order and hiding with the apps.
         val pinned = sources.filter { it.id in AerialSettings.pinnedSources }.map { sourceEntry(context, it) }
         AppCatalog.pinnedSources = pinned
-        val arrangement = store.arrange(all + pinned) { folder, inside ->
+        AppCatalog.sources = sources
+        // Names typed on the phone page stand in for the apps' own, everywhere Home shows one.
+        val named = all.map { e -> AppNames.of(e.key)?.let { e.copy(label = it) } ?: e }
+        val arrangement = store.arrange(named + pinned) { folder, inside ->
             val shown = inside.take(9).map { it.art }
             val art = folderArt[folder.id]?.takeIf { (made, _) -> made.size == shown.size && made.indices.all { made[it] === shown[it] } }?.second
                 ?: TileArtFactory.forFolder(shown).also { folderArt[folder.id] = shown to it }
             folderEntry(folder, art)
         }
         apps = arrangement.home
+        AppCatalog.home = arrangement.home
+        AppCatalog.folderApps = arrangement.folders
+        AppCatalog.hiddenApps = arrangement.hidden
         AppCatalog.folders = arrangement.home.filter { it.folder != null }
         folderApps = arrangement.folders
         hiddenApps = arrangement.hidden
@@ -281,6 +305,11 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** The phone page pins by input id. */
+    private fun pinSourceById(id: String, pinned: Boolean) {
+        sources.firstOrNull { it.id == id }?.let { setSourcePinned(it, pinned) }
+    }
+
     /** Pins a TV input to Home (as the first tile, where it is easiest to reach) or takes it off. */
     fun setSourcePinned(source: TvSource, pinned: Boolean) {
         AerialSettings.setPinned(source.id, pinned)
@@ -330,6 +359,13 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun refreshNetwork() { network = SystemProbe.network(context) }
+
+    /**
+     * For the volume broadcast, one per step. It used to run refreshSystem, which read the level,
+     * then the inputs and brightness, and only then showed that level: holding a key on the slider,
+     * the steps outran those reads, and it jumped back to older levels (issue #445).
+     */
+    fun refreshVolume() { volume = SystemProbe.volume(context) }
 
     fun adjustVolume(direction: Int) {
         SystemProbe.adjustVolume(context, direction)
@@ -393,6 +429,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         if (AppCatalog.renameFolder == ::renameFolder) AppCatalog.renameFolder = null
+        if (AppCatalog.pinSource == ::pinSourceById) AppCatalog.pinSource = null
+        if (AppCatalog.layout === layoutOps) AppCatalog.layout = null
     }
 }
 
