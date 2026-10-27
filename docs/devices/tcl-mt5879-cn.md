@@ -77,6 +77,8 @@ TCL 手机 App 有一个「把手机里的 APK 推到电视」的功能。电视
 
 ### 近期任务（75Q9K，Android 11）
 
+- 2026-10-25：沿用 fork 固定签名覆盖升级 1.47-guard（versionCode 55），保留数据，speed 编译成功。通过 uinput 注册临时键盘在真机验证长按 HOME 进入 `TaskManagerActivity`、短按 HOME 返回 Aerial；虚拟设备随后移除。守护与小T助手都已绑定，ADB 常开和自启动授权保持。31 项单元测试与两个 release 构建通过；此次实体遥控器与重启回归留待日常使用确认。
+
 - 这套固件的 `mRecentsComponent=null`，Aerial 守护原来在长按 / 双击 HOME 时调用 `GLOBAL_ACTION_RECENTS`，近期任务界面保持关闭。
 - 系统长按 HOME 由 `TclPhoneWindowManager.launchAllAppsActionForAll()` 发送 `com.tcl.action.OPEN_GLOBAL_HISTORY` 广播。CyberUI 的公开接收器 `com.tcl.global.history.receiver.GlobalHistoryReceiver` 在内部启动 `com.tcl.cyberui/.taskmanager.view.TaskManagerActivity`。该 Activity 是私有组件，直接启动会报权限错误。
 - `RecentApps` 按能力检测：任务管理 Activity 存在且启用，同时有已导出、已启用、调用方有权限访问的广播接收器，才向该接收器发送显式广播。只有历史记录功能的旧版 CyberUI，以及缺少入口的其他固件，继续调用 Android 通用 Recents。长按和双击共用此入口。
