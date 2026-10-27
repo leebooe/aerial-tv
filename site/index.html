@@ -211,7 +211,7 @@
       <div class="panel" data-panel="haier"><p>按<b>电视机身上</b>的信号源键，弹出信号源菜单后，用遥控器按 <b>左左上右</b>，进入「海尔工厂菜单」，把 <b>ADB 调试开关</b> 设为开。只改这一项，别动其他选项。<br>IP 在 设置 → 网络 → 已连接的网络 里。</p></div>
       <div class="panel" data-panel="oppo"><p>设置 → 系统 → 关于本机 → <b>设备型号</b>，按 <b>上上右右</b> 再按确认；然后到 设置 → 系统 → <b>开发者选项</b>，打开 <b>USB 调试</b>（有的机型叫「ADB 调试」）。<br>IP 在 设置 → 网络 → 已连接的网络 <b>最下面</b>。</p></div>
       <div class="panel" data-panel="other"><p>设置 → 设备偏好设置 → 关于 → 连按 <b>内部版本号</b>（Build，不是「Android 版本」）7 次，再在开发者选项里打开 <b>USB 调试</b>。<br>IP 在 设置 → 网络 → 已连接的网络 里。</p></div>
-      <p class="note">极米 H3、老乐视、荣耀智慧屏、老康佳（看不到版本号）等机型打不开 ADB。</p>
+      <p class="note">老乐视、荣耀智慧屏、老康佳（看不到版本号）等机型打不开 ADB。极米 H3 需先用第三方工具打开 ADB，见机型说明。</p>
 
       <h3 class="step"><span>2</span>填上电视 IP</h3>
       <p class="hint">在电视的 设置 → 网络 → 已连接的网络 里（OPPO S1 在这一页最下面）。电脑要和电视连同一个网络。</p>
@@ -266,13 +266,10 @@
       </div>
 
       <div class="panel" data-panel="lite">
-        <p><b>Aerial Lite</b> 是给 <b>Android 4.0–4.4</b> 老电视、老盒子用的单独版本，外观和完整版一样。<b>现在是第一版（1.0），属于测试版</b>，只在虚拟机和新电视上测过，真实 4.x 电视上可能还有不少小问题。Android 5.0 及以上请用上面的完整版。</p>
-        <p>一行命令（macOS / Linux）会自动认出 4.x 电视并装 Lite，也可以明确指定：</p>
-        <div class="code"><button class="copy" data-copy="liteonecmd">复制</button><pre id="liteonecmd"></pre></div>
-        <p>手动安装：下载 <a href="download/aerial-lite.apk"><b>aerial-lite.apk</b></a>，再运行（第三行用来调亮度，Android 4.0 会报错，可以忽略）：</p>
-        <div class="code"><button class="copy" data-copy="litecmd">复制</button><pre id="litecmd"></pre></div>
-        <p>也可以把 APK 拷进 U 盘，用电视的文件管理器打开安装。装好后<b>按遥控器的主页键</b>，在系统问「使用哪个应用」时选 <b>Aerial Lite</b>，再选「<b>始终</b>」。</p>
-        <p class="note">Lite 没有桌面守护：固件把主页键锁死在自家桌面时，只能从应用列表打开 Lite。也没有航拍壁纸、信号源磁贴和应用内升级（升级就是再装一次）。还原：设置 → 应用 → Aerial Lite → 清除默认设置，或者卸载它（<code>adb uninstall app.orchard.tv.lite</code>）。有问题请用<a href="https://github.com/pengchujin/aerial-tv/issues/new?template=device.yml&amp;title=%5BLite%5D%20">机型适配模板</a>反馈，标题写上 Lite。</p>
+        <p><b>Aerial Lite</b> 是给 <b>Android 4.0–4.4</b> 老电视、老盒子用的单独版本，外观和完整版一样。<b>现在是第一版（1.0），属于测试版</b>，只在虚拟机和新电视上测过，真实 4.x 电视上可能还有不少小问题。</p>
+        <p><b>不用单独操作</b>：「交给 Agent」和「一行命令」会先看电视的系统版本，4.x 装 Lite，5.0 及以上装完整版，不会装错。</p>
+        <p>没有电脑时：下载 <a href="download/aerial-lite.apk"><b>aerial-lite.apk</b></a> 拷进 U 盘，用电视的文件管理器打开安装（只装在 4.x 电视上）。装好后<b>按遥控器的主页键</b>，在系统问「使用哪个应用」时选 <b>Aerial Lite</b>，再选「<b>始终</b>」。</p>
+        <p class="note">Lite 没有桌面守护：固件把主页键锁死在自家桌面时，只能从应用列表打开 Lite。也没有航拍壁纸、信号源磁贴和应用内升级（升级就是再装一次）。还原：设置 → 应用 → Aerial Lite → 清除默认设置，或者卸载它。有问题请用<a href="https://github.com/pengchujin/aerial-tv/issues/new?template=device.yml">机型适配模板</a>反馈，标题写上 Lite。</p>
       </div>
 
       <p class="note">电视问是否允许调试时，选「始终允许」。TCL 会弹「多屏互动：正在发起应用推送」，选「同意」。</p>
@@ -346,7 +343,7 @@
       </details>
       <details>
         <summary>我的电视能用吗？</summary>
-        <p>先看<a href="https://github.com/pengchujin/aerial-tv#支持的机型">机型列表</a>。不在列表里的大概率也可以，原生 Android TV / Google TV 最省事。LG webOS、三星 Tizen、华为鸿蒙智慧屏的系统不一样，装不了；Android 4.0–4.4 的老电视用 Aerial Lite（测试版，见安装区的「Android 4.x」），更老的不支持。极米 H3、老乐视、荣耀智慧屏、老康佳（看不到版本号）等机型打不开 ADB，暂时没有办法。老电视或内存小的电视会自动用「流畅」效果，也可以在 个性化 → 效果 里手动选。遇到问题见上面的<a href="#adapt">「装好了，但有地方不对？」</a>。</p>
+        <p>先看<a href="https://github.com/pengchujin/aerial-tv#支持的机型">机型列表</a>。不在列表里的大概率也可以，原生 Android TV / Google TV 最省事。LG webOS、三星 Tizen、华为鸿蒙智慧屏的系统不一样，装不了；Android 4.0–4.4 的老电视用 Aerial Lite（测试版，见安装区的「Android 4.x」），更老的不支持。老乐视、荣耀智慧屏、老康佳（看不到版本号）等机型打不开 ADB，暂时没有办法。老电视或内存小的电视会自动用「流畅」效果，也可以在 个性化 → 效果 里手动选。遇到问题见上面的<a href="#adapt">「装好了，但有地方不对？」</a>。</p>
       </details>
     </div>
   </div>

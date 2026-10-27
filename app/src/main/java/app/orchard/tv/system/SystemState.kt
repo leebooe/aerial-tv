@@ -247,6 +247,67 @@ object SystemProbe {
     private val XGIMI_SETTINGS = ComponentName("com.android.newsettings", "com.xgimi.newsettings.SettingService")
     private const val XGIMI_NETWORK_PAGE = "Settings://com.xgimi.settings.net/wifi_misckey"
 
+    /**
+     * The DLP light-engine levels XGIMI's HAL steps through (1..10, 10 being full); measured on a Z7X
+     * (GMUI 6.11) and a `pig_chivalrous` (GMUI 9). The HAL has no getter for the range, and other
+     * light engines may use a wider one.
+     */
+    private const val XGIMI_DLP_LUMENS_MAX = 10
+
+    /**
+     * XGIMI's real brightness as 0..1, read from the DLP light-engine HAL
+     * `com.xgimi.gmpf.api.DisplayManager.getDlpLumensLevel()` (a byte). The class ships only on the
+     * device, in com.xgimi.api.jar, so it is reached by reflection and is absent everywhere else.
+     * The system `screen_brightness` setting does not follow this value — which is why Control
+     * Center reads it here to show the level the light engine is actually at. Writing goes through
+     * the same class; see [setXgimiBrightnessLevel].
+     */
+    fun xgimiBrightnessLevel(): Float? = runCatching {
+        val dm = xgimiDisplayManager() ?: return@runCatching null
+        val get = xgimiDisplayManagerClass()?.getMethod("getDlpLumensLevel") ?: return@runCatching null
+        val raw = (get.invoke(dm) as? Number)?.toInt() ?: return@runCatching null
+        ((raw and 0xFF) / XGIMI_DLP_LUMENS_MAX.toFloat()).coerceIn(0f, 1f)
+    }.getOrNull()
+
+    /**
+     * The class, only on devices that have XGIMI's SDK in their boot class path. Looked up once:
+     * every other TV asks for the brightness on each Control Center open and would throw here each time.
+     */
+    private val xgimiDisplayManagerClassOnce by lazy {
+        runCatching { Class.forName("com.xgimi.gmpf.api.DisplayManager") }.getOrNull()
+    }
+    private fun xgimiDisplayManagerClass(): Class<*>? = xgimiDisplayManagerClassOnce
+
+    private fun xgimiDisplayManager(): Any? {
+        val c = xgimiDisplayManagerClass() ?: return null
+        return runCatching { c.getMethod("getInstance").invoke(null) }.getOrNull()
+            ?: runCatching { c.getDeclaredConstructor().also { it.isAccessible = true }.newInstance() }.getOrNull()
+    }
+
+    /**
+     * Sets the DLP light-engine level, 1..[XGIMI_DLP_LUMENS_MAX]. Returns false where the class or
+     * the setter is missing, and true once the call went through — the light engine applies it off
+     * the caller's thread, so the level is not read back here: Control Center polls the HAL while its
+     * row is up, and shows what the light engine settled at, including where a TV drops the write.
+     *
+     * Issue #241 took this for read-only on a Z7X, where the native setter was said to drop a
+     * third-party call. On the GMUI 9 firmware of `pig_chivalrous` it goes through from a plain app:
+     * `setDlpLumensLevel` changes what `getDlpLumensLevel` answers, across processes. So it is tried
+     * rather than assumed broken.
+     */
+    fun setXgimiBrightnessLevel(level: Int): Boolean {
+        val c = xgimiDisplayManagerClass() ?: return false
+        val dm = xgimiDisplayManager() ?: return false
+        val target = level.coerceIn(1, XGIMI_DLP_LUMENS_MAX)
+        return runCatching { c.getMethod("setDlpLumensLevel", java.lang.Byte.TYPE).invoke(dm, target.toByte()) }.isSuccess
+    }
+
+    /** The DLP levels on this light engine, as the top step Control Center steps through. */
+    val xgimiBrightnessMax: Int get() = XGIMI_DLP_LUMENS_MAX
+
+    /** Whether this TV's brightness is the light engine's (see [xgimiBrightnessLevel]). */
+    val hasXgimiBrightness: Boolean get() = xgimiBrightnessLevel() != null
+
     // XGIMI Z7X (GMUI 6.11) opens these pages through an exported service rather than an activity;
     // the reporter of issue #241 opened settings, network, inputs and picture through it on a Z7X.
     private fun xgimiSettingsIntent(context: Context, page: String): Intent? {
@@ -258,6 +319,7 @@ object SystemProbe {
     }
 
     fun startSettingsIntent(context: Context, intent: Intent) {
+        if (HisenseSources.open(context, intent)) return
         val activity = if (intent.component == XGIMI_SETTINGS) {
             val shown = runCatching { context.startService(intent) }.getOrNull() != null
             if (shown) return
@@ -336,6 +398,9 @@ object SystemProbe {
         }.isSuccess
     }
 
+    /** XGIMI's own source page, opened through its settings service; see [openInputPicker]. */
+    private const val XGIMI_SOURCE_PAGE = "Settings://com.xgimi.settings.signalSource/hdmi_misckey"
+
     /**
      * Opens the TV's own input picker, for TVs whose inputs Android does not list. TCL MT5879 keeps
      * its inputs in its own middleware (TvInputManager has none) and its remote's input key opens a
@@ -344,6 +409,13 @@ object SystemProbe {
      */
     fun openInputPicker(context: Context): Boolean {
         val pm = context.packageManager
+        // XGIMI (GMUI): TvInputManager does list the inputs here, but nothing on the firmware answers
+        // the passthrough intent they carry - `am start` cannot resolve it - so a source tile and the
+        // inputs page of Control Center both end at "this TV does not support it" (issue #241, and
+        // again on a `pig_chivalrous`, GMUI 9). Its settings service opens the source page instead.
+        xgimiSettingsIntent(context, XGIMI_SOURCE_PAGE)?.let { intent ->
+            if (runCatching { context.startService(intent) }.getOrNull() != null) return true
+        }
         // Hisense VIDAA_TV (MT9653, Android 11) lists no inputs either; its input panel is a
         // foreground service (issue #261, tried on the reporter's TV).
         val hisense = Intent("com.hisense.tv.start_inputs")
@@ -426,12 +498,11 @@ object SystemProbe {
     /** CEC logical-device placeholders some input services report instead of the device's name. */
     private val GENERIC_CEC_NAME = Regex("^(Playback|Recorder|Tuner|Audio ?System|Audio|TV|Reserved)[ _]?\\d*$", RegexOption.IGNORE_CASE)
 
-    /**
-     * Physical inputs from the TV input framework, routed through the maker's own player where the
-     * generic passthrough intent has no handler (Xiaomi's China firmware).
-     */
+    /** Lists framework inputs first, then known manufacturer-specific input integrations. */
     fun sources(context: Context): List<TvSource> = frameworkSources(context)
+        .ifEmpty { XgimiMstarSources.load(context) }
         .ifEmpty { xiaomiSources(context) }
+        .ifEmpty { HisenseSources.load(context) }
         .ifEmpty { KonkaSources.load(context) }
         .ifEmpty { tclSources(context) }
         .ifEmpty { whaleySources(context) }

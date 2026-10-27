@@ -76,6 +76,7 @@ import app.orchard.tv.system.MissingClipboard
 import app.orchard.tv.system.Sounds
 import app.orchard.tv.system.NetKind
 import app.orchard.tv.system.SystemProbe
+import app.orchard.tv.system.HisenseSources
 import app.orchard.tv.system.LaunchFallback
 import app.orchard.tv.system.settingsLaunchIntent
 import app.orchard.tv.update.Updates
@@ -491,6 +492,7 @@ class MainActivity : ComponentActivity() {
      * starts nothing on the timer, and Back starts the firmware's.
      */
     private fun startScreensaver(asked: Boolean) {
+        AerialSettings.relock()
         if (Wallpapers.screensaver == ScreensaverMode.System) {
             if (asked && !SystemScreensaver.startFirmware(this)) DiagLog.i("no system screensaver to start")
             return
@@ -753,6 +755,8 @@ class MainActivity : ComponentActivity() {
         super.onStop()
         if (locked) return
         DiagLog.i("onStop")
+        // An app, the screensaver or standby in front: the PIN is asked again, as in Lite (#718).
+        AerialSettings.relock()
         unregisterReceiver(packageReceiver)
         unregisterReceiver(volumeReceiver)
         unregisterReceiver(dayReceiver)
@@ -784,8 +788,12 @@ class MainActivity : ComponentActivity() {
             }
         }
         try {
+            if (HisenseSources.open(this, app.launchIntent())) return
             startActivity(settingsLaunchIntent(this, app.launchIntent()), options)
         } catch (e: Exception) {
+            // XGIMI (GMUI): nothing answers the passthrough intent a source tile carries, so the tile
+            // opens the source page of its settings service instead (issue #241).
+            if (app.source != null && SystemProbe.openInputPicker(this)) return
             Toast.makeText(this, getString(R.string.launch_failed, app.label), Toast.LENGTH_SHORT).show()
         }
     }
@@ -794,6 +802,9 @@ class MainActivity : ComponentActivity() {
         try {
             SystemProbe.startSettingsIntent(this, intent)
         } catch (e: Exception) {
+            // XGIMI (GMUI): its inputs carry a passthrough intent that nothing answers, so switching
+            // goes through the source page of its settings service (issue #241).
+            if (intent.data?.host == "android.media.tv" && SystemProbe.openInputPicker(this)) return
             LaunchFallback.next()?.let { return open(it) }
             Toast.makeText(this, R.string.unavailable, Toast.LENGTH_SHORT).show()
         }
