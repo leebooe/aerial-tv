@@ -5,8 +5,11 @@ import android.content.Context
 import android.content.Intent
 import app.orchard.tv.apps.TileSheet
 import app.orchard.tv.settings.AerialSettings
+import app.orchard.tv.system.DeviceProfile
 import app.orchard.tv.system.DiagLog
+import app.orchard.tv.system.SystemProbe
 import app.orchard.tv.update.Updates
+import app.orchard.tv.ui.components.UhdCanvas
 import app.orchard.tv.wallpaper.ScreensaverMode
 import app.orchard.tv.wallpaper.Wallpapers
 import kotlinx.coroutines.launch
@@ -40,6 +43,43 @@ class ConfigReceiver : BroadcastReceiver() {
             resultData = "exporting $name"
             return
         }
+        // ... --es device_profile '{"hidden":[8],"labels":{"6":"HDMI 2"},"xiaomiSources":{"6":24}}'
+        //                                 (this TV's own corrections, see DeviceProfile; replaces
+        //                                 the built-in entry; "default" goes back to it. Home
+        //                                 lists the inputs again the next time it comes to front)
+        intent.getStringExtra("device_profile")?.let { json ->
+            val ok = DeviceProfile.setOwn(context, json.takeUnless { it.trim() == "default" })
+            val profile = DeviceProfile.current(context).toJson()
+            resultData = if (ok) "device_profile=$profile (${DeviceProfile.origin(context)})" else "device_profile not valid JSON; kept $profile"
+            return
+        }
+        // ... --ez list_sources true      (the inputs as JSON: what Home shows, and the hidden ones
+        //                                 the profile can bring back, with the Xiaomi source ids)
+        if (intent.getBooleanExtra("list_sources", false)) {
+            val shown = SystemProbe.sources(context).map { it.id }.toSet()
+            val all = (SystemProbe.sources(context) + SystemProbe.inputsToCheck(context).filter { it.hidden }).distinctBy { it.id }
+            resultData = org.json.JSONArray(all.map { s ->
+                org.json.JSONObject().put("id", s.id).put("label", s.label).put("kind", s.kind.name)
+                    .put("shown", s.id in shown).apply {
+                        s.hardware?.let { put("hw", it) }
+                        s.firmwareLabel?.let { put("firmwareLabel", it) }
+                        s.xiaomiInput?.let { put("xiaomiInput", it) }
+                    }
+            }).toString()
+            return
+        }
+        // ... --es open_source <input id>  (open an input the way its tile does, with this TV's
+        //                                 profile; ids are in the diagnostics' Inputs. For
+        //                                 tools/selftest.sh and agents checking a profile)
+        intent.getStringExtra("open_source")?.let { id ->
+            val source = (SystemProbe.inputsToCheck(context) + SystemProbe.sources(context)).firstOrNull { it.id == id }
+            resultData = if (source == null) "open_source: no input $id" else runCatching {
+                context.startActivity(source.intent)
+                "open_source: ${source.label} -> ${source.intent.component?.flattenToShortString() ?: source.intent.data}" +
+                    (source.xiaomiInput?.let { " input=$it" } ?: "")
+            }.getOrElse { "open_source: ${it.javaClass.simpleName} ${it.message}" }
+            return
+        }
         if (intent.getBooleanExtra("clear_pin", false)) {
             AerialSettings.init(context)
             AerialSettings.choosePin(null)
@@ -59,8 +99,14 @@ class ConfigReceiver : BroadcastReceiver() {
         // ... --ez diag true / --ez mode_switch false / --ez soft_layer true   (see DiagLog;
         //                                 the last two apply the next time Home starts)
         if (intent.hasExtra("diag")) DiagLog.setEnabled(context, intent.getBooleanExtra("diag", false))
-        for (key in listOf("mode_switch", "soft_layer")) {
+        // ... --ez saver_fade_offscreen true   (issue #654, see DiagLog.saverFadeOffscreen)
+        for (key in listOf("mode_switch", "soft_layer", "saver_fade_offscreen")) {
             if (intent.hasExtra(key)) DiagLog.setOption(context, key, intent.getBooleanExtra(key, false))
+        }
+        // ... --ez uhd_canvas true|false / --es uhd_canvas auto   (Home at the panel's resolution,
+        //                                 see UhdCanvas; applies the next time Home starts)
+        if (intent.hasExtra("uhd_canvas")) {
+            UhdCanvas.choose(context, intent.extras?.get("uhd_canvas") as? Boolean)
         }
         if (intent.hasExtra("update_test")) {
             Updates.testApk = if (intent.getBooleanExtra("update_test", false)) {

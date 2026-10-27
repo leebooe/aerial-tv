@@ -7,7 +7,7 @@
 **给国产电视的一块干净桌面。**
 
 参照 Apple TV 做的 Android TV 桌面：没有广告，没有推荐流，只有你的 App、壁纸和航拍屏保。<br>
-适合小米、TCL 等国产电视，开机自动进入，待机也不会被清理。
+适合小米、TCL、创维、索尼等国产电视，也能装在盒子和投影仪上。开机自动进入，待机也不会被清理。
 
 **中文** · [English](README.en.md)
 
@@ -18,6 +18,7 @@
 <a href="https://github.com/pengchujin/aerial-tv/releases/latest"><img alt="版本" src="https://img.shields.io/github/v/release/pengchujin/aerial-tv?style=flat-square&label=%E7%89%88%E6%9C%AC&color=2997ff"></a>
 <a href="LICENSE"><img alt="许可证 MIT" src="https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-555555?style=flat-square"></a>
 <img alt="Android TV 5.0+" src="https://img.shields.io/badge/Android%20TV-5.0%2B-3ddc84?style=flat-square&logo=android&logoColor=white">
+<a href="#lite"><img alt="Lite 4.0–4.4 测试版" src="https://img.shields.io/badge/Lite-4.0%E2%80%934.4%20%E6%B5%8B%E8%AF%95%E7%89%88-f5a623?style=flat-square&logo=android&logoColor=white"></a>
 
 ![Aerial 首页](site/img/home.jpg)
 
@@ -113,6 +114,37 @@ Windows 用 Agent 装，或照[安装说明](site/agent.md)里的 Windows 步骤
 
 **升级**：1.32 起，有新版本时控制中心会出现「有新版本」，点进去选「下载并安装」，在电视自己的安装界面确认（小米、TCL 上验证过），装完回到 Aerial，设置都保留。电视不让 App 安装应用时，升级就是再运行一次安装命令：升级页上有二维码，手机扫码能直接复制这台电视的命令，或者交给 Agent。1.31 及以前没有这个按钮，这一次还是要再运行一次安装命令。
 
+<a id="lite"></a>
+
+### Android 4.0–4.4 老电视：Aerial Lite（测试版）
+
+Android 4.0–4.4 的老电视、老盒子装不了完整版（界面框架最低要 Android 5.0），所以有一个单独的 **Aerial Lite**：包名 `app.orchard.tv.lite`，外观和完整版一样。
+
+> **Lite 现在是第一版（1.0），属于测试版。** 只在 Android 4.0.4 / 4.4.4 虚拟机，以及小米、TCL 的新电视上测过，还没在真实的 4.x 电视上用过，可能有不少小问题。**只适配 Android 4.0–4.4**；Android 5.0 及以上请用上面的完整版。遇到问题请用[机型适配模板](https://github.com/pengchujin/aerial-tv/issues/new?template=device.yml&title=%5BLite%5D%20)反馈，标题写上 Lite。
+
+**一行命令（macOS / Linux）**：和完整版是同一条命令，脚本发现电视是 Android 4.x 会自动装 Lite；也可以明确指定：
+
+```bash
+curl -fsSL https://aerial.qust.me/install.sh | TV=192.168.1.20 bash -s lite
+```
+
+**手动**：下载 [aerial-lite.apk](https://aerial.qust.me/download/aerial-lite.apk)，然后：
+
+```bash
+adb connect 192.168.1.20:5555
+adb install -r aerial-lite.apk
+adb shell pm grant app.orchard.tv.lite android.permission.WRITE_SECURE_SETTINGS   # 调亮度用；Android 4.0 会报错，可以忽略
+adb shell am start -n app.orchard.tv.lite/.HomeActivity
+```
+
+**U 盘**：把 `aerial-lite.apk` 拷进 U 盘，用电视的文件管理器打开安装。
+
+**装好以后**：按遥控器的**主页键**，系统问「使用哪个应用」时选 **Aerial Lite**，再选「**始终**」。不弹出选择、直接回到原桌面，说明固件把主页键锁在了自家桌面，这时只能从应用列表打开 Lite。
+
+**和完整版的区别**：没有桌面守护（无障碍接管），开机和主页键全靠系统的默认桌面；没有航拍壁纸、「我的视频」壁纸、信号源磁贴（4.x 没有电视输入框架，信号源按钮打开电视自己的信号源面板）、应用内升级（升级就是再装一次，设置保留）。航拍屏保、照片和每日一图、时钟、文件夹、长按菜单、控制中心、个性化、手机配置页都有。详细说明见 [docs/LITE.md](docs/LITE.md)。
+
+**还原**：电视上 设置 → 应用 → Aerial Lite → 清除默认设置，再按主页键选原来的桌面；或者直接卸载：`adb uninstall app.orchard.tv.lite`（一行命令的 `bash -s restore --uninstall` 也会卸载它）。
+
 ### 还原
 
 ```bash
@@ -130,37 +162,71 @@ curl -fsSL https://aerial.qust.me/install.sh | TV=192.168.1.20 bash -s restore
 
 ### 常见问题
 
+- **我的电视能用吗**：见下面的[支持的机型](#支持的机型)。
+
 - **只用 U 盘装了 APK**：1.32 起「我的应用」里有 Aerial 的图标，打开后会提示怎么设为主屏幕。只装 APK 时按主页键、开机和待机后还是原桌面，要用上面的命令或 Agent 再设置一次（会覆盖安装，不丢设置）。
 - **TCL 弹出「多屏互动」**：按遥控器「右」再按确认，选「同意」。
 - **创维 `adb install` 报 `INSTALL_FAILED_USER_RESTRICTED`**：先运行 `adb shell settings put global verifier_verify_adb_installs 0` 再装（用户反馈，详见[安装说明](site/agent.md#常见情况)）。
 - **提示不允许安装桌面类 App**：命令最后加 `-s guard`，或下载 [aerial-guard.apk](https://aerial.qust.me/download/aerial-guard.apk)。
 - **`KEEP_ADB=1` 是什么**：小米待机后会关掉 ADB，加上它 Aerial 会重新打开，方便以后升级。
 - **原来的桌面、会员、小爱、账号和有线电视还在吗**：都在。Aerial 只换桌面，原来的桌面在 App 列表里（小米影视、PatchWall 从「桌面」磁贴进），小爱同学、小米账号、有线电视照常。开机广告是固件播的，去不掉。
-- **不支持**：LG webOS、三星 Tizen、华为鸿蒙智慧屏，以及 Android 4.4 及更老的系统。极米 H3、老乐视、荣耀智慧屏、老康佳（看不到版本号）等打不开 ADB 的机型也暂时没办法。
 
 ## 它怎么接管桌面
 
-国产电视大多只认自家桌面，待机时还会清理第三方 App。所以 Aerial 用一个无障碍服务，原桌面一出现就切回来（只看哪个窗口在前台，不读屏幕内容）；被清理后再靠通知监听让系统把它拉起来（不读通知）。原生 Android TV 上不需要这些，直接设成默认桌面就行。
+国产电视大多只认自家桌面，待机时还会清理第三方 App。所以 Aerial 用一个无障碍服务，原桌面一出现就切回来（只看哪个窗口在前台，不读屏幕内容）；被清理后再靠通知监听让系统把它拉起来（不读通知）。老小米（Android 6）的桌面不报告窗口变化，守护改看系统的用量统计；有些酷开、创维固件不按标准方式启动桌面，守护也认得它们自己的桌面。原生 Android TV 上不需要这些，直接设成默认桌面就行。
 
-## 已验证的电视
+## 支持的机型
 
-| 机型 | 系统 | 情况 |
-|---|---|---|
-| 小米 MiTV-MFTR0 / Redmi X65 2026 | Android 14 | 日常使用（[笔记](docs/devices/xiaomi-mitv-mftr0.md)） |
-| 小米 MiTV-MFFU0 | Android 14 | 安装、开机自启（[笔记](docs/devices/xiaomi-mitv-mffu0.md)） |
-| 小米 MiTV-MTSU0 / S65 Mini LED 2026 至尊版 | Android 14 | 安装、开机自启（[笔记](docs/devices/xiaomi-mitv-mtsu0.md)） |
-| 小米 MiTV-ASTP0 / NSOP0 | Android 9 | 用户验证（[#48](https://github.com/pengchujin/aerial-tv/issues/48)、[#65](https://github.com/pengchujin/aerial-tv/issues/65)） |
-| 小米 MiTV-MFTP0 | Android 9 | 安装、开机自启；升级后守护会掉（[#72](https://github.com/pengchujin/aerial-tv/issues/72)） |
-| TCL MT5879 国行 | Android 11 | 日常使用（[笔记](docs/devices/tcl-mt5879-cn.md)） |
-| TCL 75V2 国行（m7221） | Android 8 | 免 root：改固件属性开机直达 Aerial，不用无障碍和通知监听（[笔记](docs/devices/tcl-m7221-cn.md)） |
-| 索尼 A80J 国行 / BRAVIA VH1 | Android 10 / 12 | 用户验证（[#16](https://github.com/pengchujin/aerial-tv/issues/16)、[#2](https://github.com/pengchujin/aerial-tv/issues/2)） |
-| 创维酷开 K3 Pro | Android 11 | 用户验证（[#43](https://github.com/pengchujin/aerial-tv/issues/43)） |
-| 康佳 KKTV U86V9 | Android 9 | 用户验证：主页键、开机自启、信号源；亮度调不了（[笔记](docs/devices/konka-kktv-u86v9.md)） |
-| OPPO K9 | Android 9 | 要改包名才能装（[笔记](docs/devices/oppo-coloros-tv.md)） |
-| 康佳 2861、PPTV K55U27、极米 m7642、腾讯极光盒子 7S | Android 5–9 | 用户验证，各有小问题，见 [Issues](https://github.com/pengchujin/aerial-tv/issues) |
-| 雷鸟 55S595C Ultra | Android 11 | 能装，但接管不了 HOME（[#52](https://github.com/pengchujin/aerial-tv/issues/52)） |
+✅ 能用　⚠️ 能用，有限制　❌ 暂时接管不了。大多来自用户反馈，带「笔记」的有详细记录。
 
-能装但开机进不了 Aerial 的：Vidda、海信、雷鸟鹤 6 2025 Ultra。你的电视能用，或者有问题，欢迎用[机型适配模板](https://github.com/pengchujin/aerial-tv/issues/new?template=device.yml)告诉我们，附上诊断信息：电脑上运行 `curl -fsSL https://aerial.qust.me/tools/report.sh | TV=<电视IP> bash`（只读，不改电视），或者在手机配置页「更多 → 反馈问题」里复制。诊断信息不含账号、IP、Wi-Fi 名称和 App 列表。
+| 品牌 | 机型 | 系统 | 情况 |
+|---|---|---|---|
+| 小米 / Redmi | MiTV-MFTR0（Redmi X65 2026）、MFFU0、MTSU0（S65 Mini LED 2026 至尊版） | Android 14 | ✅ 日常使用（[MFTR0](docs/devices/xiaomi-mitv-mftr0.md)、[MFFU0](docs/devices/xiaomi-mitv-mffu0.md)、[MTSU0](docs/devices/xiaomi-mitv-mtsu0.md)） |
+| 小米 | MiTV-ASTP0、NSOP0、MFTP0 | Android 9 | ✅ MFTP0 被系统清理后约 30–60 秒才回来（[笔记](docs/devices/xiaomi-mitv-mftp0.md)） |
+| 小米 | 小米电视 4 / 4A / 4X / 3S、小米盒子 4 | Android 6 | ✅ 1.43 起；按主页键后几秒才回到 Aerial（[笔记](docs/devices/xiaomi-android6.md)） |
+| 小米（峰米） | Ultraman 系列投影仪 | Android 9 | ✅（[笔记](docs/devices/xiaomi-ultraman-projector.md)） |
+| TCL | MT5879 国行 | Android 11 | ✅ 日常使用（[笔记](docs/devices/tcl-mt5879-cn.md)） |
+| TCL | 75V2（m7221） | Android 8 | ✅ 免 root，开机直达（[笔记](docs/devices/tcl-m7221-cn.md)） |
+| 雷鸟 | 55S595C Ultra、鹤 6 2025 Ultra | Android 11+ | ❌ 能装，接管不了主页键（[笔记](docs/devices/tcl-mt9655-cn.md)） |
+| 索尼 | A80J 国行、BRAVIA VH1 | Android 10 / 12 | ✅ |
+| 创维 / 酷开 | K3 Pro、75A7D | Android 11 | ✅ 75A7D 的信号源 1.45 起能用 |
+| 创维 / 酷开 | 65G60、8R134 / 8R145、aigc 系（C10 投影、P60、7T863） | Android 8–11 | ⚠️ 开机先进酷开桌面，或被系统清理后要等 20–30 秒（[笔记](docs/devices/skyworth-coocaa.md)） |
+| 创维 | 7T641、75A6E | Android 13 | ❌ 黑屏或卡死 |
+| 松下 | TH-55HX560C（创维代工） | Android 8 | ⚠️ 信号源列不出来 |
+| 康佳 | KKTV U86V9、2861 | Android 9 | ✅ U86V9 亮度调不了（[笔记](docs/devices/konka-kktv-u86v9.md)） |
+| 海信 / Vidda | VIDAA 各型号 | Android 5–14 | ⚠️ 主页键能接管，开机多数先进聚好看；VIDAA C1 投影接管不了（[笔记](docs/devices/hisense-vidaa.md)） |
+| OPPO | K9 | Android 9 | ⚠️ 要改包名才能装（[笔记](docs/devices/oppo-coloros-tv.md)） |
+| 极米 | Z7X、m7642 | Android 9 | ✅ Z7X 要用第三方工具打开 ADB（[笔记](docs/devices/xgimi-z7x.md)） |
+| 大眼橙 | X7 投影仪 | Android 9 | ✅ HDMI 里按主页键可以回到 Apple TV 主屏幕（[笔记](docs/devices/obe-x7.md)） |
+| 腾讯极光盒子 | 6 / 6SE / 7S | Android 10 / 14 | ✅ 6 正常；⚠️ 7S 开机停在原桌面（[笔记](docs/devices/tencent-aurora-box.md)） |
+| 其他盒子 | CM311-1（改版 ATV）、PPTV K55U27 | Android 9 | ✅ |
+
+- **Android 4.0–4.4**：用 [Aerial Lite](#lite)（第一版，测试版）。
+- **不支持**：LG webOS、三星 Tizen、华为鸿蒙智慧屏，以及 Android 4.0 以前的系统。
+- **打不开 ADB**：极米 H3、老乐视、荣耀智慧屏、老康佳（看不到版本号）。
+- **老电视或内存小的电视会卡**：1.48 起自动改用「流畅」效果（面板用纯色、去掉高光），也可以在 个性化 → 效果 里手动选。
+
+<a id="adapt"></a>
+
+### 装好了，但有地方不对？帮 Aerial 适配你的电视
+
+按主页键回到原桌面、待机或开机后停在原桌面、信号源打开的口不对、亮度条没反应，选一种方式：
+
+**1. 交给 Agent（最省事）**：发给能在电脑上运行命令的 Agent。它会自检，能改的当场改好（比如信号源编号），最后整理成一份报告，你看过再提交。
+
+```text
+请按 https://aerial.qust.me/adapt.md 给我的电视做 Aerial 适配。
+电视 IP：<电视IP>
+哪里不对：<比如：按主页键回到原桌面 / HDMI 2 打开的是 HDMI 1 / 待机后停在原桌面>
+
+请先完整读完说明再动手，在我的电脑上亲自运行命令，不要只把步骤告诉我。
+待机测试、重启电视之前先问我；不要卸载或停用任何系统应用。
+最后把整理好的报告给我看，我同意后再提交到 GitHub。
+```
+
+**2. 用手机提交**：控制中心 → 个性化，扫二维码，手机页最下面「反馈问题 → 显示诊断信息 → 去 GitHub 反馈」。型号和版本会自动填进[机型适配模板](https://github.com/pengchujin/aerial-tv/issues/new?template=device.yml)，诊断信息自动复制，粘贴进去就行。
+
+电脑上也可以自己跑：`curl -fsSL https://aerial.qust.me/tools/report.sh | TV=<电视IP> bash`（只读）和 `curl -fsSL https://aerial.qust.me/tools/selftest.sh | TV=<电视IP> bash`（按主页键、打开设置，看 Aerial 能不能回来），把两份输出贴进模板。诊断信息不含账号、IP、Wi-Fi 名称和 App 列表。你的电视能正常用，也欢迎用[实测可用模板](https://github.com/pengchujin/aerial-tv/issues/new?template=works.yml)告诉大家。
 
 ## 开发
 

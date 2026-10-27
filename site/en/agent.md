@@ -84,7 +84,7 @@ Run these in PowerShell, with the adb from step 1. Everything inside `adb shell 
 2. Install it: `adb install -r aerial-standard.apk`. Go on when it prints `Success`. If it fails:
    - With **`INSTALL_FAILED_VERIFICATION_FAILURE`**: this is a TCL, which refuses every adb install. Follow "TCL" below, then continue from item 3.
    - With **`INSTALL_FAILED_USER_RESTRICTED`** (Skyworth and others): see the Skyworth entry under "Common cases", then install again.
-   - Otherwise (for example, the firmware refuses home-screen apps): install `aerial-guard.apk` instead (same address with `guard` in place of `standard`).
+   - Otherwise (for example, the firmware refuses home-screen apps; OPPO TVs print `INSTALL_FAILED_DUPLICATE_PERMISSION: App installation is banned, because of launcher categories`): install `aerial-guard.apk` instead (same address with `guard` in place of `standard`).
 
 3. Grant the permissions only adb can grant. If one fails, go on with the next:
    ```
@@ -98,9 +98,14 @@ Run these in PowerShell, with the adb from step 1. Everything inside `adb shell 
    adb shell cmd notification allow_listener app.orchard.tv/app.orchard.tv.guard.RevivalListener
    adb shell appops set app.orchard.tv APP_AUTO_START allow
    adb shell appops set app.orchard.tv APP_ASSOC_START allow
+   ```
+   The two `APP_*` app ops exist only on TCL; elsewhere they fail, which is fine.
+
+   Start Aerial once, wait 5 seconds, then compile it (takes up to a minute and makes Aerial run smoothly on the TV; on some TVs the compile only works after Aerial has started once):
+   ```
+   adb shell am start -W -n app.orchard.tv/.MainActivity
    adb shell cmd package compile -m speed -f app.orchard.tv
    ```
-   The two `APP_*` app ops exist only on TCL; elsewhere they fail, which is fine. `compile` takes up to a minute and makes Aerial run smoothly on the TV.
 
 4. Screensaver: run `adb shell settings get secure screensaver_enabled`. If it prints `1`, also run:
    ```
@@ -164,14 +169,14 @@ adb shell "cmd package resolve-activity --brief -a android.intent.action.MAIN -c
 adb shell settings get secure enabled_accessibility_services
 adb shell "dumpsys accessibility | grep -c -E 'label=(Aerial|app.orchard.tv)'"
 adb shell input keyevent KEYCODE_HOME
-adb shell "sleep 3; dumpsys window | grep mCurrentFocus"
+adb shell "sleep 8; dumpsys window | grep mCurrentFocus"
 ```
 
 - Line 1 shows a `versionName`: installed.
 - Line 2 is the home screen the system resolves to. It is fine for Xiaomi to still name PatchWall (`com.mitv.tvhome`) or TCL its own launcher; Home Guard takes over. `app.orchard.tv` is better still.
 - Line 3 includes `app.orchard.tv/app.orchard.tv.guard.HomeGuardService`: Home Guard is on. (On stock Android TV, where Aerial is already the default home screen, it may not be; line 6 decides.)
 - Line 4 is above 0: Home Guard is running.
-- **Line 6 includes `app.orchard.tv`: Home leads to Aerial and the install worked.** Don't tell the user it's installed until it does.
+- **Line 6 includes `app.orchard.tv`: Home leads to Aerial and the install worked.** Don't tell the user it's installed until it does. On some firmwares the stock launcher stays a few seconds after Home before Home Guard brings Aerial back (about 5 s on OPPO ColorOS TV, #664): if line 6 shows the stock launcher, run `adb shell "sleep 5; dumpsys window | grep mCurrentFocus"` once more, and only call it a failure when neither shows `app.orchard.tv`.
 - Paste the raw output of lines 2, 3 and 6 to the user, not just "success". If line 2 errors on an old system without `cmd`, run `adb shell pm resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME` instead.
 
 If line 6 shows something else, wait 5 seconds and run lines 5 and 6 again (Home Guard starts slowly on some TVs). If it still does, see "Common cases".
@@ -233,5 +238,6 @@ Then:
 - **Can I still use the old home screen?** Yes. It stays in Aerial's app list (including Xiaomi's PatchWall, opened from the 桌面 tile) and opens as before, with its recommendations. Xiaomi Video and PatchWall content are still there.
 - **Can it remove the boot ad?** No. The firmware plays it before Aerial starts.
 - **How do I update later?** From 1.32, when Control Center shows New Version, choose Download and Install and confirm in the system installer (checked on Xiaomi). On TVs that do not let apps install apps, run the same install command again (on Windows, repeat items 1, 2, 3 and 6 of step 3); every setting is kept.
+- **Installed, but something is off (Home, standby, boot, inputs, brightness)**: follow https://aerial.qust.me/en/adapt.md to adapt Aerial to this TV: self-test, fix what can be fixed on the TV, write up the rest.
 - **Something is wrong on the TV and the user wants to report it**: on macOS / Linux run `curl -fsSL https://aerial.qust.me/tools/report.sh | TV=<IP> bash`. It only reads, and writes `aerial-report-<model>.md`; read it, then paste it into https://github.com/pengchujin/aerial-tv/issues/new?template=device.yml . Without a computer: scan the QR code in Personalize and use 反馈问题 (Report a problem) at the bottom of the phone page to copy the diagnostics.
 - **Where do I report problems?** https://github.com/pengchujin/aerial-tv/issues, with the TV model (`adb shell getprop ro.product.model`) and the install output.

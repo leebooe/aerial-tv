@@ -22,6 +22,10 @@ import androidx.core.content.ContextCompat
  * - Sony BRAVIA: the screen brightness setting changes but the backlight does not (no backlight in
  *   the display config); Control Center opens Sony's picture settings, which DISPLAY_SETTINGS
  *   resolves to. Reported on a BRAVIA VH1, Android 12 (GitHub issue #2).
+ * - Skyworth/Coocaa: the panel is driven by the TV's picture middleware, and Settings.System
+ *   screen_brightness does not move it (75A7D, 8R134_A7D, Android 11, CCOS 9.0: the setting sat at
+ *   2/255 with the screen at full brightness). Control Center opens the firmware's picture panel
+ *   instead (SystemProbe.skyworthPicturePanel).
  * - Others: the standard Settings.System screen brightness, 0–255. Writing it needs the "modify
  *   system settings" app-op. Both are granted by tools/install.sh; without them Control Center
  *   opens the TV's own picture settings instead.
@@ -29,15 +33,10 @@ import androidx.core.content.ContextCompat
 object Brightness {
     private const val XIAOMI_BACKLIGHT = "picture_backlight"
 
-    /**
-     * MiTV-MFTP0 (Android 9) has picture_backlight, yet changing it leaves the panel as it was (two
-     * owners, issues #284 and #335); it gets Xiaomi's own backlight slider like the TVs without it.
-     * Nothing on the TV tells the two apart, so by model.
-     */
-    private val IGNORES_BACKLIGHT_SETTING = setOf("MiTV-MFTP0", "MiTV_MFTP0")
+    // MiTV-MFTP0 keeps picture_backlight without following it: DeviceProfile.ignoresPictureBacklight.
 
     private fun usesXiaomiBacklight(context: Context) =
-        Build.MODEL !in IGNORES_BACKLIGHT_SETTING &&
+        !DeviceProfile.current(context).ignoresPictureBacklight &&
             Settings.Global.getString(context.contentResolver, XIAOMI_BACKLIGHT) != null
 
     private fun isTcl(context: Context) =
@@ -79,10 +78,11 @@ object Brightness {
             // A Xiaomi TV where neither place works: open the TV's own backlight slider rather than
             // show one that changes nothing (issue #346).
             isXiaomi(context) -> null
-            // TCL and Sony drive the backlight through their own TV services and ignore the system
-            // setting; Control Center opens their picture panels.
+            // TCL, Sony and Skyworth/Coocaa drive the backlight through their own TV services and
+            // ignore the system setting; Control Center opens their picture panels.
             // Before Android 6.0 WRITE_SETTINGS is granted at install.
-            isTcl(context) || isSony(context) || Build.VERSION.SDK_INT >= 23 && !Settings.System.canWrite(context) -> null
+            isTcl(context) || isSony(context) || SystemProbe.skyworthPicturePanel(context) ||
+                Build.VERSION.SDK_INT >= 23 && !Settings.System.canWrite(context) -> null
             else -> Settings.System.getInt(r, Settings.System.SCREEN_BRIGHTNESS, 128) / 255f
         }
     }

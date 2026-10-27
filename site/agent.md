@@ -84,7 +84,7 @@ curl -fsSL https://aerial.qust.me/install.sh | KEEP_ADB=1 TV=<IP> bash
 2. 安装：`adb install -r aerial-standard.apk`，输出 `Success` 继续。失败时：
    - 输出里有 **`INSTALL_FAILED_VERIFICATION_FAILURE`**：这是 TCL，它拒绝一切 adb 安装。按下面「TCL 安装」处理，装好后从第 3 条继续。
    - 输出里有 **`INSTALL_FAILED_USER_RESTRICTED`**（创维等）：见「常见情况」里的创维一条，处理后再装。
-   - 其他失败（比如固件不许装桌面类 App）：改用 `aerial-guard.apk`（同一个地址，把 `standard` 换成 `guard`）再装。
+   - 其他失败（比如固件不许装桌面类 App，OPPO 电视报 `INSTALL_FAILED_DUPLICATE_PERMISSION: App installation is banned, because of launcher categories`）：改用 `aerial-guard.apk`（同一个地址，把 `standard` 换成 `guard`）再装。
 
 3. 授予只有 adb 能给的权限（某条报错可以忽略，继续下一条）：
    ```
@@ -98,9 +98,14 @@ curl -fsSL https://aerial.qust.me/install.sh | KEEP_ADB=1 TV=<IP> bash
    adb shell cmd notification allow_listener app.orchard.tv/app.orchard.tv.guard.RevivalListener
    adb shell appops set app.orchard.tv APP_AUTO_START allow
    adb shell appops set app.orchard.tv APP_ASSOC_START allow
+   ```
+   最后两条 `appops` 只有 TCL 认，别的电视报错是正常的。
+
+   再启动一次 Aerial，等 5 秒后编译（要几十秒，让 Aerial 在电视上更流畅；有的电视要先启动过一次，编译才有效）：
+   ```
+   adb shell am start -W -n app.orchard.tv/.MainActivity
    adb shell cmd package compile -m speed -f app.orchard.tv
    ```
-   最后两条 `appops` 只有 TCL 认，别的电视报错是正常的。`compile` 要几十秒，让 Aerial 在电视上更流畅。
 
 4. 屏保：运行 `adb shell settings get secure screensaver_enabled`。结果是 `1` 时再运行：
    ```
@@ -164,14 +169,14 @@ adb shell "cmd package resolve-activity --brief -a android.intent.action.MAIN -c
 adb shell settings get secure enabled_accessibility_services
 adb shell "dumpsys accessibility | grep -c -E 'label=(Aerial|app.orchard.tv)'"
 adb shell input keyevent KEYCODE_HOME
-adb shell "sleep 3; dumpsys window | grep mCurrentFocus"
+adb shell "sleep 8; dumpsys window | grep mCurrentFocus"
 ```
 
 - 第 1 条有 `versionName`：已安装。
 - 第 2 条是系统给出的默认桌面。小米仍然是 PatchWall（`com.mitv.tvhome`）、TCL 仍然是自己的桌面时正常，守护接管；是 `app.orchard.tv` 更好。
 - 第 3 条有 `app.orchard.tv/app.orchard.tv.guard.HomeGuardService`：守护已打开（原生 Android TV 已是默认桌面时可能没有，看第 6 条即可）。
 - 第 4 条大于 0：守护正在运行。
-- **第 6 条包含 `app.orchard.tv`：按主页键进入 Aerial，安装成功。** 这一条不满足，就不能告诉用户装好了。
+- **第 6 条包含 `app.orchard.tv`：按主页键进入 Aerial，安装成功。** 这一条不满足，就不能告诉用户装好了。有的固件按主页键后自家桌面要停几秒，守护才把 Aerial 拉回来（OPPO ColorOS TV 约 5 秒，#664）：第 6 条是原桌面时，再运行一次 `adb shell "sleep 5; dumpsys window | grep mCurrentFocus"`，两次都不是 `app.orchard.tv` 才算失败。
 - 第 2、3、6 条的原始输出必须贴给用户，不要只说「成功」。第 2 条报错（老系统没有 `cmd`）时，改用 `adb shell pm resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME`。
 
 第 6 条不是 `app.orchard.tv` 时，等 5 秒再运行一次第 5、6 条（有的电视守护启动得慢）。还不是，看「常见情况」。
@@ -233,5 +238,6 @@ adb shell cmd role remove-role-holder --user 0 android.app.role.HOME app.orchard
 - **原来的桌面还能用吗？** 能。原来的桌面作为一个 App 留在 Aerial 的 App 列表里（小米的 PatchWall 也在，从「桌面」磁贴进入），打开就是原来的界面和推荐内容。小米影视、PatchWall 的内容都在。
 - **开机广告能去掉吗？** 不能。开机广告是固件在 Aerial 启动之前播的。
 - **以后怎么升级？** 1.32 起，电视上控制中心出现「有新版本」时点「下载并安装」，在系统安装界面确认即可（小米上验证过）。电视不让 App 安装应用时，再运行一次同样的安装命令（Windows 重复第 3 步的 1、2、3、6 条），设置都会保留。
+- **装好了但有地方不对（主页键、待机、开机、信号源、亮度）**：按 https://aerial.qust.me/adapt.md 给这台电视做适配：自检、当场改能改的、整理成报告。
 - **电视上有问题，想反馈给作者**：macOS / Linux 运行 `curl -fsSL https://aerial.qust.me/tools/report.sh | TV=<IP> bash`，它只读不改，生成 `aerial-report-<机型>.md`；读一遍，再贴进 https://github.com/pengchujin/aerial-tv/issues/new?template=device.yml 。没有电脑时，用手机扫个性化里的二维码，在手机页底部「反馈问题」复制诊断信息。
 - **出问题去哪反馈？** https://github.com/pengchujin/aerial-tv/issues ，附上电视型号（`adb shell getprop ro.product.model`）和安装输出。

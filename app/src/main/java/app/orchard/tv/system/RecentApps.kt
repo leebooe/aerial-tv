@@ -34,6 +34,6 @@ internal object RecentApps {
             // Firmware updates may remove the receiver or restrict it between lookup and delivery.
             Log.w("AerialGuard", "Firmware task manager unavailable; trying Android Recents", e)
         }
-        return fallback().also { Log.i("AerialGuard", "Android Recents requested: $it") }
+        return fallback().also { Log.i("AerialGuard", "Fallback task manager requested: $it") }
     }
 }

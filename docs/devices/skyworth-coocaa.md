@@ -12,6 +12,17 @@
 | 松下 TH-55HX560C（创维代工，天赐系统，GX580C，m7221） | Android 8.0 | 主页键、返回都能回 Aerial；`TvInputManager` 一个信号源都没有，控制中心显示「没有可用的信号源」。还不知道天赐切信号源的接口 | #370 |
 | 8R134 / 8R145、K3 Pro 等 | Android 11 | 见 #43、#155：开机先进自家桌面，切信号源时经过 `com.tianci.tv/.SkyLauncher` | #43、#155 |
 
+## sky848_9s60 机芯（MStar m7221 / MSD6A848，Android 8.0）：看固件版本号
+
+报告人在 #713 对比了这块主板上的几台：`ro.build.version.incremental` 是 `021.008.x` 的能接管（70A9，#461），`022.008.x` 起开机和主页键都在酷开桌面，要 root 改 `DEFAULT_HOMEPAGE`（65G60 / 9S60 #316、7S718_H30 #686、7S712_G32 #548，7S87_A20 #630、7S77_H4 #549 症状相同）。机制见上表 65G60 一行：开机由 `sky_launcher` 按 `general_config.xml` 的组件直启，守护在后台的 `startActivity` 被 `CooCaaCheckDialogPermission` 丢掉，`persist.service.homepage.*` 会被写回。样本只有四五台，有反例再改。
+
+root 后把 `/system/pcfg/<型号目录>/config/general_config.xml` 里的 `DEFAULT_HOMEPAGE` 改成 `app.orchard.tv/app.orchard.tv.MainActivity`（必须是「包名/完整类名」两段），#316 里连续 10 次冷启动都直达。
+
+## 75A7D 的信号源键和亮度（#566，报告人实测，1.49 起）
+
+- 遥控器信号源键：固件弹自己的 Quick Panel（`com.coocaa.os.ccosservice/com.coocaa.os.controlcenter.quicksettings.service.FeatureService`），同时把按键交给前台 App。有这个服务时 Aerial 不再响应信号源键，和 TCL 的 `tclInputPanel` 一样。
+- 亮度：`screen_brightness` 一直是 2/255，写它不改背光（画质中间件管）；`ACTION_DISPLAY_SETTINGS` 也解析不到。图像侧栏是启动 `com.skyworth.setting/.service.HalfScreenService`、带 `Key = "android.settings.PICTURE_SETTINGS"`（导出、无权限）。有这个服务时控制中心不画亮度滑条，改成打开它。两个包都要写进 `<queries>`。
+
 ## 75A7D 的信号源接口
 
 2026-10-24，报告人在 75A7D（`8R134_A7D`，RTD2885N，酷开 CCOS 9.0 / Android 11）上实测：
@@ -34,4 +45,6 @@
 - 8R734_Q7H（titanite，Android 13）：和 8R710 一样，Aerial 拿不到窗口焦点，5 秒后 ANR 被杀（#421）。目前没有办法。
 - 70A9（7S70_A9，MStar m7221，Android 8，低内存）：`TvInputManager` 没有输入，信号源走 `com.skyworth.tv.sdk.provider`（查询必须带 projection，`displayName` 是实时的，HDMI 从 0 编号，AV、VOD 是 -1）；遥控器「信号源」键被固件截走，打开原桌面；待机唤醒先经过 `com.tianci.system/...WakeLockActivity` 10–12 秒再到 Aerial（#461）。
 - 7AA46_H5D、8A002_H5D（T963，Android 9）：Aerial 在前台、守护过滤按键时，音量键的抬起到不了守护，1.41–1.46 按一下音量就一直加到 100 或减到 0（#448 #451），1.47 修了。把 Aerial 设为默认桌面（`cmd package set-home-activity`）后守护不过滤按键，音量正常，开机和主页键也正常（#449）。
+- 酷开 aigc 系（C10 投影仪 3H352_C10 Android 9 #487、P60 Android 11、7T863_N6E Android 10 #106）：主页键在 WindowManager 里变成创维热键广播，`com.tianci.system` 的 SLauncher 按组件拉起 `com.coocaa.aigc.home/.home.rootpage.HomeActivity`，不走 HOME 解析；这个桌面不声明任何 Home 类别。1.48 起守护把它算原桌面（未在真机验证）。7T863_N6E 上改 `persist.service.model.pkg/.cls`（加上 `homepage.*`）后主页键进 Aerial，但每次开机被固件写回。
+- 8R145_P3DM（Android 11）：`SkyProcManager` 会强停「不可见的非系统应用」，从 Aerial 打开别的 App 后 Aerial 就被杀，这时按主页键先到酷开桌面，等复活约 20–30 秒才回 Aerial（#106 的日志）。目前没有办法。
 - 创维/酷开 Whaley 55D2UK（helios，MStar，Android 5.0.2，arm64）：standard 版能装能接管，原桌面 `com.helios.guide` priority 1，设不成默认桌面，靠守护（主页键约 4 秒、先闪原桌面）；信号源走微鲸的 `com.whaley.tv.tvplayer.ui/.RootActivity`；亮度 `screen_brightness` 可调（#457）。
