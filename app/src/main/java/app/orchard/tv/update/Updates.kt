@@ -1,16 +1,19 @@
 package app.orchard.tv.update
 
+import android.app.PendingIntent
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageInfo
+import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
+import androidx.annotation.RequiresApi
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -18,6 +21,7 @@ import androidx.core.content.FileProvider
 import androidx.core.content.edit
 import app.orchard.tv.BuildConfig
 import app.orchard.tv.guard.GuardSetup
+import app.orchard.tv.system.DiagLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -29,21 +33,19 @@ import java.net.URL
 
 /**
  * Whether a newer release is out (issues #24, #76). Most owners stay on the version they installed
- * and report bugs fixed long ago. At most once a day Aerial reads the latest release's tag from the
+ * and report bugs fixed long ago. Aerial reads the latest release's tag from the
  * website (reachable in China, unlike GitHub); Control Center then names the new version and says
  * how to update. Nothing is downloaded or installed in the background: only when the owner picks
  * "Download and Install" does Aerial fetch the new APK and hand it to the system installer
  * ([install]).
  *
- * Every three hours, not once a day: several releases can come out in one day, and a TV that had
- * checked in the morning kept offering nothing until the next day (1.22 to 1.25 on 2026-10-22).
+ * Home and network events check at most every three hours; opening Control Center shortens that
+ * to ten minutes. Failed checks retry while Home is in front (#912).
  */
 object Updates {
     private const val TAG = "AerialUpdates"
     private const val PREFS = "updates"
     private const val VERSION_URL = "https://aerial.qust.me/download/version.txt"
-    private const val CHECK_EVERY_MS = 3 * 60 * 60 * 1000L
-    private const val RETRY_MS = 10 * 60 * 1000L
 
     /**
      * A source that delivers less than [STALL_BYTES] in [STALL_MS] is given up for the next one
@@ -51,7 +53,7 @@ object Updates {
      */
     private const val STALL_MS = 30_000L
     private const val STALL_BYTES = 256 * 1024L
-    const val CONTROL_CENTER_MAX_AGE_MS = RETRY_MS
+    const val CONTROL_CENTER_MAX_AGE_MS = UpdateCheck.PANEL_MAX_AGE_MS
 
     /** This build's version, e.g. "1.17" (the guard build's "-guard" left off). */
     val current: String = BuildConfig.VERSION_NAME.substringBefore('-')
@@ -63,15 +65,27 @@ object Updates {
     var install by mutableStateOf<Install>(Install.Idle); private set
 
     private lateinit var prefs: SharedPreferences
+    private lateinit var appContext: Context
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var started = false
-    private var lastAttempt = 0L
+    private var checker: UpdateCheck? = null
 
     fun init(context: Context) {
         if (started) return
         started = true
+        appContext = context.applicationContext
         prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         available = prefs.getString("latest", null)?.takeIf { newer(it, current) }
+        checker = UpdateCheck(
+            scope = scope,
+            lastSuccess = { prefs.getLong("checked_at", 0) },
+            read = { withContext(Dispatchers.IO) { read(VERSION_URL) } },
+            save = { latest, checkedAt ->
+                prefs.edit { putString("latest", latest); putLong("checked_at", checkedAt) }
+                available = latest.takeIf { newer(it, current) }
+            },
+            log = { Log.i(TAG, it); DiagLog.i("update check: $it") },
+        )
         // A download left from an install that has since finished or been given up.
         scope.launch(Dispatchers.IO) {
             apkFile(context).takeIf { System.currentTimeMillis() - it.lastModified() > 60 * 60 * 1000L }?.delete()
@@ -83,22 +97,21 @@ object Updates {
      * Center asks with a shorter [maxAgeMs]: that is where the viewer looks for a new version, and a
      * release out an hour ago was not shown there for hours more (issue #301).
      */
-    fun checkIfStale(force: Boolean = false, maxAgeMs: Long = CHECK_EVERY_MS) {
-        if (!started) return
-        val now = System.currentTimeMillis()
-        if (!force && (now - lastAttempt < RETRY_MS || now - prefs.getLong("checked_at", 0) < maxAgeMs)) return
-        lastAttempt = now
-        scope.launch {
-            val latest = withContext(Dispatchers.IO) {
-                runCatching { read(VERSION_URL).trim().removePrefix("v") }
-                    .onFailure { Log.w(TAG, "could not check for a new version", it) }
-                    .getOrNull()
-                    ?.takeIf { it.matches(Regex("\\d+(\\.\\d+)*")) }
-            } ?: return@launch
-            prefs.edit { putString("latest", latest); putLong("checked_at", System.currentTimeMillis()) }
-            available = latest.takeIf { newer(it, current) }
-        }
+    fun checkIfStale(
+        force: Boolean = false,
+        maxAgeMs: Long = UpdateCheck.MAX_AGE_MS,
+        networkCameUp: Boolean = false,
+    ) {
+        checker?.check(force, maxAgeMs, networkCameUp, when {
+            force -> "forced"
+            networkCameUp -> "network"
+            maxAgeMs == CONTROL_CENTER_MAX_AGE_MS -> "control center"
+            else -> "home"
+        })
     }
+
+    fun diagnostics(): String = if (!started) "not initialized" else
+        "known=${prefs.getString("latest", null) ?: "unknown"}; ${checker?.diagnostics}"
 
     /** Whether version [a] comes after [b], comparing dotted numbers ("1.10" after "1.9"). */
     fun newer(a: String, b: String): Boolean {
@@ -113,6 +126,7 @@ object Updates {
 
     private fun read(url: String): String {
         val c = URL(url).openConnection() as HttpURLConnection
+        LegacyUpdateTls.configure(appContext, c)
         c.connectTimeout = 8_000
         c.readTimeout = 10_000
         return try {
@@ -157,7 +171,8 @@ object Updates {
      * Downloads this flavor's APK of the latest release and opens the system installer on it.
      * Not PackageInstaller sessions: TCL's verifier (docs/devices/tcl-mt5879-cn.md) passes only
      * installs that go through com.android.packageinstaller, as Dangbei's do, and an ACTION_VIEW on
-     * the APK makes the installer itself the one installing. The APK must be this package, signed
+     * the APK makes the installer itself the one installing. Android 13 and later, a session first
+     * (installBySession). The APK must be this package, signed
      * with this copy's key and no older, or the installer would only fail with a less clear message.
      */
     fun install(context: Context) {
@@ -202,14 +217,85 @@ object Updates {
                 install = Install.Failed(failure)
                 return@launch
             }
-            install = if (openInstaller(context, app, file)) Install.Opened else Install.Failed(Failure.Blocked)
+            val opened = if (Build.VERSION.SDK_INT >= 33) installBySession(app, file) else openInstaller(context, app, file)
+            install = if (opened) Install.Opened else Install.Failed(Failure.Blocked)
         }
     }
 
-    /** Back in Aerial with the installer closed and Aerial not replaced: the owner backed out. */
+    /**
+     * From Android 13 the installer's ACTION_VIEW records the APK as a local file (packageSource 3),
+     * and Android then restricts the app's settings (ACCESS_RESTRICTED_SETTINGS deny; seen on the
+     * Android 13 TV emulator). On TCL T966D5 (Android 14) Home Guard was off after every update made
+     * this way, and stayed on after one pushed by 多屏互动 (issue #723). A session that says where
+     * the APK came from is not restricted; the system still asks the owner to confirm. Where the
+     * firmware turns the session down, the installer's ACTION_VIEW as before (UpdateResult).
+     */
+    @RequiresApi(33)
+    private fun installBySession(app: Context, file: File): Boolean = runCatching {
+        val installer = app.packageManager.packageInstaller
+        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+            setAppPackageName(app.packageName)
+            setPackageSource(PackageInstaller.PACKAGE_SOURCE_OTHER)
+        }
+        val id = installer.createSession(params)
+        installer.openSession(id).use { session ->
+            file.inputStream().use { input ->
+                session.openWrite("aerial.apk", 0, file.length()).use { out ->
+                    input.copyTo(out)
+                    session.fsync(out)
+                }
+            }
+            val result = Intent(app, UpdateResult::class.java)
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+            GuardSetup.noteInstallerOpened(app)
+            session.commit(PendingIntent.getBroadcast(app, id, result, flags).intentSender)
+        }
+        Log.i(TAG, "install session $id committed for ${file.length()} bytes")
+        true
+    }.getOrElse {
+        Log.w(TAG, "no install session; opening the installer", it)
+        openInstaller(app, app, file)
+    }
+
+    /** The session's answer (UpdateResult): the owner's confirmation, or the installer instead. */
+    internal fun onSessionResult(context: Context, intent: Intent) {
+        val app = context.applicationContext
+        val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+        when (status) {
+            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                @Suppress("DEPRECATION")
+                val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT) ?: return
+                runCatching { app.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.onFailure {
+                    // Some Android 13+ firmware installers have no CONFIRM_INSTALL page but still
+                    // take the APK by ACTION_VIEW (issue #827, model not known yet).
+                    Log.w(TAG, "could not ask to confirm the update; opening the installer", it)
+                    val id = intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1)
+                    if (id >= 0) runCatching { app.packageManager.packageInstaller.abandonSession(id) }
+                    val file = apkFile(app)
+                    if (!file.isFile || !openInstaller(app, app, file)) install = Install.Failed(Failure.Blocked)
+                }
+            }
+            PackageInstaller.STATUS_SUCCESS -> Unit // this process is replaced
+            PackageInstaller.STATUS_FAILURE_ABORTED -> {
+                Log.i(TAG, "update not confirmed")
+                install = Install.Idle
+            }
+            else -> {
+                val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
+                Log.w(TAG, "install session failed ($status, $message); opening the installer")
+                val file = apkFile(app)
+                if (!file.isFile || !openInstaller(app, app, file)) install = Install.Failed(Failure.Blocked)
+            }
+        }
+    }
+
+    /** Resume failed checks; if the installer closed without replacing Aerial, reset its button. */
     fun onHomeResumed() {
+        checker?.setActive(true)
         if (install == Install.Opened) install = Install.Idle
     }
+
+    fun onHomePaused() { checker?.setActive(false) }
 
     /** Back to the button, when the update page is left. */
     fun resetInstall() {
@@ -257,6 +343,7 @@ object Updates {
         check(directory.canWrite()) { "Cannot write update directory: $directory" }
         val part = File(directory, file.name + ".part")
         val c = URL(url).openConnection() as HttpURLConnection
+        LegacyUpdateTls.configure(appContext, c)
         c.connectTimeout = 10_000
         c.readTimeout = 20_000
         // A throttled route can keep the TLS handshake up and deliver a byte now and then, so no

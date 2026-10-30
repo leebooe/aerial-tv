@@ -16,7 +16,9 @@ object SystemIntents {
         context,
         Intent("com.xiaomi.mitv.settings.SETTINGS").setComponent(ComponentName("com.xiaomi.mitv.settings", "com.xiaomi.mitv.settings.entry.MainActivity")),
         Intent(Intent.ACTION_MAIN).setComponent(ComponentName("com.haier.tv.menusetting", "com.haier.tv.menusetting.RootActivity")),
+        Intent(Intent.ACTION_MAIN).setComponent(ComponentName("com.konka.tvsettings", "com.konka.settingcenter.settings.view.MainSettingsActivity")),
         Intent(Settings.ACTION_SETTINGS),
+        Intent(Intent.ACTION_MAIN).setComponent(ComponentName("com.konka.systemsetting", "com.konka.systemsetting.MainActivity")),
         Intent(Intent.ACTION_MAIN).setComponent(ComponentName("com.tcl.settings", "com.tcl.settings.ui.MainActivity")),
         Intent(Intent.ACTION_MAIN).setComponent(ComponentName("com.pptv.setting", "com.pptv.setting.root.SettingsActivity")),
         Intent(Intent.ACTION_VIEW, Uri.parse("Settings://com.xgimi.misckey.main/mainPage")),
@@ -24,6 +26,7 @@ object SystemIntents {
 
     fun network(context: Context, ethernet: Boolean): Intent = first(
         context,
+        *listOfNotNull(hisenseNetworkSettingsIntent(context)).toTypedArray(),
         *listOfNotNull(Intent("com.xiaomi.mitv.settings.ETHERNET_SETTINGS").setPackage("com.xiaomi.mitv.settings").takeIf { ethernet }).toTypedArray(),
         Intent("com.xiaomi.mitv.settings.WIFI_SETTINGS").setComponent(ComponentName("com.xiaomi.mitv.settings", "com.xiaomi.mitv.settings.wifi.MitvWifiActivity")),
         Intent(Intent.ACTION_MAIN).setComponent(ComponentName("com.android.tv.settings", "com.android.tv.settings.connectivity.NetworkActivity")),
@@ -32,6 +35,16 @@ object SystemIntents {
         Intent(Settings.ACTION_SETTINGS),
         Intent(Intent.ACTION_MAIN).setComponent(ComponentName("com.tcl.settings", "com.tcl.settings.ui.MainActivity")),
     )
+
+    // Same OEM network category as SystemProbe (#760), not the direct Wi-Fi list.
+    // Sidebar focus verified on H55E9A / Android 8; Android 4.x Lite still needs device verification.
+    private fun hisenseNetworkSettingsIntent(context: Context): Intent? {
+        val intent = Intent("android.settings.NETWORK_SETTINGS").setComponent(
+            ComponentName("com.android.tv.settings", "com.hisense.systemsettings.MainActivity"),
+        )
+        val info = runCatching { context.packageManager.resolveActivity(intent, 0)?.activityInfo }.getOrNull()
+        return intent.takeIf { info != null && info.exported && info.enabled && info.applicationInfo.enabled }
+    }
 
     /**
      * The TV's own input panel where Android lists no inputs (every 4.x TV): Hisense's service,
@@ -52,8 +65,27 @@ object SystemIntents {
         }
         if (runCatching { pm.resolveService(tcl, 0) }.getOrNull() != null && runCatching { context.startService(tcl) }.getOrNull() != null) return true
         val coocaa = Intent("coocaa.intent.action.SOURCE_DIALOG").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (runCatching { pm.resolveActivity(coocaa, 0) }.getOrNull() == null) return false
-        return runCatching { context.startActivity(coocaa) }.isSuccess
+        if (runCatching { pm.resolveActivity(coocaa, 0) }.getOrNull() != null && runCatching { context.startActivity(coocaa) }.isSuccess) return true
+        // Coocaa C10's AI launcher picker and the older SkyMovie broadcast (issue #779).
+        val aigc = Intent("coocaa.intent.aigc.home.tvsource").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (runCatching { pm.resolveActivity(aigc, 0) }.getOrNull() != null && runCatching { context.startActivity(aigc) }.isSuccess) return true
+        val skyMovie = Intent("com.coocaa.action.SOURCE")
+            .setComponent(ComponentName("com.tianci.movieplatform", "com.ccos.cooui.homepage.receiver.LaunchSourceReceiver"))
+        if (runCatching { pm.queryBroadcastReceivers(skyMovie, 0) }.getOrNull().orEmpty().any { it.activityInfo.exported }) {
+            return runCatching { context.sendBroadcast(skyMovie) }.isSuccess
+        }
+        return false
+    }
+
+    /**
+     * Konka's full settings menu, a panel its settings app shows as a service (Konka V563, issue
+     * #771); false where the TV has no such service.
+     */
+    fun openSettingsPanel(context: Context): Boolean {
+        val konka = Intent("com.konka.settings.action.SETTING_MAIN_VIEW")
+            .setComponent(ComponentName("com.konka.tvsettings", "com.konka.service.SettingService"))
+        if (runCatching { context.packageManager.resolveService(konka, 0) }.getOrNull()?.serviceInfo?.exported != true) return false
+        return runCatching { context.startService(konka) }.getOrNull() != null
     }
 
     /** Not Intent.resolveActivity: it returns an explicit component unchecked. */
